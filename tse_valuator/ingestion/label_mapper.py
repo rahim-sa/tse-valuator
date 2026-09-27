@@ -1,0 +1,62 @@
+"""
+Maps Codal's raw Persian statement labels to our canonical LineItemKey
+enum. This is a static, human-curated lookup table — NOT an LLM call —
+because Codal's labels come from a small, regulatory-standard chart of
+accounts, not freeform company-specific text.
+
+Unmapped labels are returned as-is (see `map_label`) so callers can
+decide how to handle them — logging, flagging for human review, or
+(eventually) an LLM-assisted mapping step for genuinely novel labels.
+We are NOT wiring that fallback yet; this module's contract is: known
+labels map correctly, unknown labels are reported, never guessed.
+"""
+
+from __future__ import annotations
+
+from tse_valuator.ingestion.schema import LineItemKey
+
+# Verified against a real filing (تست/tests/fixtures/shapadis_annual_1404.xlsx).
+# Extend this table deliberately as we encounter more filings/industries —
+# do not let anything silently auto-map an unfamiliar label.
+LABEL_TO_KEY: dict[str, LineItemKey] = {
+    "درآمدهاي عملياتي": LineItemKey.REVENUE,
+    "بهاى تمام شده درآمدهاي عملياتي": LineItemKey.COST_OF_REVENUE,
+    "سود(زيان) ناخالص": LineItemKey.GROSS_PROFIT,
+    "سود(زيان) عملياتى": LineItemKey.OPERATING_INCOME,
+    "سود(زيان) خالص": LineItemKey.NET_INCOME,
+    "جمع دارايي‌ها": LineItemKey.TOTAL_ASSETS,
+    "جمع بدهي‌ها": LineItemKey.TOTAL_LIABILITIES,
+    "جمع حقوق مالکانه": LineItemKey.TOTAL_EQUITY,
+    "موجودي نقد": LineItemKey.CASH_AND_EQUIVALENTS,
+    "جريان ‌خالص ‌ورود‌ (خروج) ‌نقد حاصل از فعاليت‌هاي ‌عملياتي": LineItemKey.OPERATING_CASH_FLOW,
+    "پرداخت‌هاي نقدي براي خريد دارايي‌هاي ثابت مشهود": LineItemKey.CAPEX,
+}
+
+
+class UnmappedLabelError(Exception):
+    """Raised when a label has no known mapping — surfaced explicitly,
+    never silently skipped or guessed."""
+
+    def __init__(self, label: str):
+        self.label = label
+        super().__init__(f"No canonical mapping for label: {label!r}")
+
+
+def map_label(raw_label_fa: str) -> LineItemKey:
+    """
+    Returns the canonical LineItemKey for a raw Codal label.
+    Raises UnmappedLabelError if the label isn't in our known table —
+    callers must handle this explicitly (e.g. flag for review), rather
+    than the mapper silently returning something wrong.
+    """
+    key = LABEL_TO_KEY.get(raw_label_fa.strip())
+    if key is None:
+        raise UnmappedLabelError(raw_label_fa)
+    return key
+
+
+def try_map_label(raw_label_fa: str) -> LineItemKey | None:
+    """Non-raising variant — returns None instead of raising, for
+    callers that want to collect all unmapped labels in one pass rather
+    than stopping at the first one."""
+    return LABEL_TO_KEY.get(raw_label_fa.strip())
