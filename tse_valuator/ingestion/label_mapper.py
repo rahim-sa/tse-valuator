@@ -4,6 +4,10 @@ enum. This is a static, human-curated lookup table — NOT an LLM call —
 because Codal's labels come from a small, regulatory-standard chart of
 accounts, not freeform company-specific text.
 
+Labels are matched via normalize_fa() so that Arabic/Persian codepoint
+variants and inconsistent zero-width non-joiners don't cause silent
+lookup failures (see text_normalize.py).
+
 Unmapped labels are returned as-is (see `map_label`) so callers can
 decide how to handle them — logging, flagging for human review, or
 (eventually) an LLM-assisted mapping step for genuinely novel labels.
@@ -14,8 +18,9 @@ labels map correctly, unknown labels are reported, never guessed.
 from __future__ import annotations
 
 from tse_valuator.ingestion.schema import LineItemKey
+from tse_valuator.ingestion.text_normalize import normalize_fa
 
-# Verified against a real filing (تست/tests/fixtures/shapadis_annual_1404.xlsx).
+# Verified against a real filing (tests/fixtures/shapadis_annual_1404.xlsx).
 # Extend this table deliberately as we encounter more filings/industries —
 # do not let anything silently auto-map an unfamiliar label.
 LABEL_TO_KEY: dict[str, LineItemKey] = {
@@ -30,6 +35,12 @@ LABEL_TO_KEY: dict[str, LineItemKey] = {
     "موجودي نقد": LineItemKey.CASH_AND_EQUIVALENTS,
     "جريان ‌خالص ‌ورود‌ (خروج) ‌نقد حاصل از فعاليت‌هاي ‌عملياتي": LineItemKey.OPERATING_CASH_FLOW,
     "پرداخت‌هاي نقدي براي خريد دارايي‌هاي ثابت مشهود": LineItemKey.CAPEX,
+}
+
+# Normalized-key index, built once at import time, so lookups are
+# insensitive to Arabic/Persian codepoint variants and ZWNJ differences.
+_NORMALIZED_LABEL_TO_KEY: dict[str, LineItemKey] = {
+    normalize_fa(label): key for label, key in LABEL_TO_KEY.items()
 }
 
 
@@ -49,7 +60,7 @@ def map_label(raw_label_fa: str) -> LineItemKey:
     callers must handle this explicitly (e.g. flag for review), rather
     than the mapper silently returning something wrong.
     """
-    key = LABEL_TO_KEY.get(raw_label_fa.strip())
+    key = _NORMALIZED_LABEL_TO_KEY.get(normalize_fa(raw_label_fa))
     if key is None:
         raise UnmappedLabelError(raw_label_fa)
     return key
@@ -59,4 +70,4 @@ def try_map_label(raw_label_fa: str) -> LineItemKey | None:
     """Non-raising variant — returns None instead of raising, for
     callers that want to collect all unmapped labels in one pass rather
     than stopping at the first one."""
-    return LABEL_TO_KEY.get(raw_label_fa.strip())
+    return _NORMALIZED_LABEL_TO_KEY.get(normalize_fa(raw_label_fa))

@@ -9,9 +9,8 @@ later, never silently dropped or guessed.
 """
 
 from __future__ import annotations
-
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass 
+from datetime import datetime, timezone
 
 from tse_valuator.ingestion.label_mapper import try_map_label
 from tse_valuator.ingestion.schema import (
@@ -49,7 +48,8 @@ def build_normalized_statement(
     unmapped_labels: list[str] = []
     unparsable_values: list[tuple[str, str]] = []
 
-    now = datetime.utcnow()
+    #now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     for section in sections:
         for label, values in section.rows.items():
