@@ -91,3 +91,22 @@ def test_non_retryable_exception_propagates_immediately():
             sleep_fn=lambda s: None,
         )
     assert attempts["count"] == 1  # should not have retried at all
+
+from tse_valuator.ingestion.rate_limit import RateLimitExceededError
+
+
+def test_rate_limit_exceeded_error_is_never_retried():
+    attempts = {"count": 0}
+
+    def hits_rate_limit():
+        attempts["count"] += 1
+        raise RateLimitExceededError("https://example.com/fake")
+
+    with pytest.raises(RateLimitExceededError):
+        retry_with_backoff(
+            hits_rate_limit,
+            retryable_exceptions=(ConnectionError,),  # RateLimitExceededError NOT included
+            max_attempts=3,
+            sleep_fn=lambda s: None,
+        )
+    assert attempts["count"] == 1  # must not have retried

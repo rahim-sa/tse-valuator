@@ -23,7 +23,8 @@ from dataclasses import dataclass
 
 import requests
 
-from tse_valuator.ingestion.rate_limit import RateLimiter, retry_with_backoff
+#from tse_valuator.ingestion.rate_limit import RateLimiter, retry_with_backoff
+from tse_valuator.ingestion.rate_limit import RateLimiter, RateLimitExceededError, retry_with_backoff
 
 _BROWSER_HEADERS = {
     "User-Agent": (
@@ -71,9 +72,17 @@ def _fetch_search_page(symbol: str, from_jdate: str, page_number: int) -> dict:
         "search": "true",
     }
 
+    # def _do_request():
+    #     _rate_limiter.wait()
+    #     resp = _session.get(_SEARCH_URL, params=params, timeout=20)
+    #     resp.raise_for_status()
+    #     return resp.json()
+
     def _do_request():
         _rate_limiter.wait()
         resp = _session.get(_SEARCH_URL, params=params, timeout=20)
+        if resp.status_code == 429:
+            raise RateLimitExceededError(resp.url)
         resp.raise_for_status()
         return resp.json()
 
@@ -117,9 +126,16 @@ def search_filings(symbol: str, from_jdate: str) -> list[FilingMetadata]:
 def download_filing_excel(excel_url: str, timeout: int = 30) -> bytes:
     """Downloads a Codal 'Excel' export (actually HTML -- see statement_parser.py)."""
 
+    # def _do_download():
+    #     _rate_limiter.wait()
+    #     resp = _session.get(excel_url, timeout=timeout)
+    #     resp.raise_for_status()
+    #     return resp.content
     def _do_download():
         _rate_limiter.wait()
         resp = _session.get(excel_url, timeout=timeout)
+        if resp.status_code == 429:
+            raise RateLimitExceededError(resp.url)
         resp.raise_for_status()
         return resp.content
 

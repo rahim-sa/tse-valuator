@@ -19,6 +19,21 @@ import time
 from collections.abc import Callable, Iterable
 
 
+class RateLimitExceededError(Exception):
+    """
+    Raised when Codal itself tells us we're rate-limited (HTTP 429).
+    Deliberately NOT included in any retryable_exceptions tuple we pass
+    to retry_with_backoff -- when the server has already told us to
+    slow down, automatically retrying (even with backoff) is exactly
+    the wrong response. This must surface immediately so a human
+    decides when to try again.
+    """
+
+    def __init__(self, url: str):
+        self.url = url
+        super().__init__(f"Rate limited (HTTP 429) by: {url}")
+
+
 class RateLimiter:
     """Enforces a minimum interval between successive calls to `.wait()`."""
 
