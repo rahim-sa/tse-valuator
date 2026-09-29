@@ -41,3 +41,32 @@ def test_end_to_end_builds_statement_with_correct_revenue():
     # We expect some unmapped labels at this stage — that's honest and
     # correct given our lookup table is intentionally minimal so far.
     assert isinstance(result.unmapped_labels, list)
+    
+
+def test_dcf_critical_items_are_mapped():
+    html_bytes = FIXTURE.read_bytes()
+    period = FiscalPeriod(
+        period_type=PeriodType.ANNUAL,
+        jalali_year=1404,
+        jalali_end_date="1404/06/31",
+        gregorian_end_date=date(2025, 9, 22),
+    )
+    result = build_normalized_statement(
+        html_bytes=html_bytes,
+        filing_url="https://excel.codal.ir/service/Excel/GetAll/GVzCYzVxWC1QdFQldBkovg%3d%3d/0",
+        symbol_fa="شپدیس",
+        company_name_fa="پترو شیمی پردیس",
+        statement_type=StatementType.INCOME_STATEMENT,
+        consolidation_basis=ConsolidationBasis.CONSOLIDATED,
+        period=period,
+    )
+    assert result.statement is not None
+    for key in [
+        LineItemKey.DEPRECIATION_AMORTIZATION,
+        LineItemKey.INVENTORY,
+        LineItemKey.TRADE_RECEIVABLES,
+        LineItemKey.TRADE_PAYABLES,
+        LineItemKey.BANK_BORROWINGS,
+    ]:
+        item = result.statement.get(key)
+        assert item is not None, f"{key} not found in statement"

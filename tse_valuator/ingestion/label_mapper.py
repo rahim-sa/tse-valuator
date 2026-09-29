@@ -61,6 +61,14 @@ LABEL_TO_KEY: dict[str, LineItemKey] = {
     "موجودي نقد": LineItemKey.CASH_AND_EQUIVALENTS,
     "جريان ‌خالص ‌ورود‌ (خروج) ‌نقد حاصل از فعاليت‌هاي ‌عملياتي": LineItemKey.OPERATING_CASH_FLOW,
     "پرداخت‌هاي نقدي براي خريد دارايي‌هاي ثابت مشهود": LineItemKey.CAPEX,
+
+    "هزینه استهلاک": LineItemKey.DEPRECIATION_AMORTIZATION,
+    "موجودي مواد و کالا": LineItemKey.INVENTORY,
+    "دريافتني‌هاي تجاري و ساير دريافتني‌ها": LineItemKey.TRADE_RECEIVABLES,
+    "پرداختني‌هاي تجاري و ساير پرداختني‌ها": LineItemKey.TRADE_PAYABLES,
+    "تسهیلات دریافتی از بانکها": LineItemKey.BANK_BORROWINGS,
+
+    
 }
 
 

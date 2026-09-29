@@ -79,6 +79,12 @@ class LineItemKey(str, Enum):
     OPERATING_CASH_FLOW = "operating_cash_flow"
     CAPEX = "capex"
 
+    DEPRECIATION_AMORTIZATION = "depreciation_amortization"
+    INVENTORY = "inventory"
+    TRADE_RECEIVABLES = "trade_receivables"
+    TRADE_PAYABLES = "trade_payables"
+    BANK_BORROWINGS = "bank_borrowings"
+
 class SourceCitation(BaseModel):
     """Provenance for a single extracted value — mandatory, not optional."""
     filing_url: HttpUrl
