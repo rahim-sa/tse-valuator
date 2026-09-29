@@ -23,11 +23,37 @@ from tse_valuator.ingestion.text_normalize import normalize_fa
 # Verified against a real filing (tests/fixtures/shapadis_annual_1404.xlsx).
 # Extend this table deliberately as we encounter more filings/industries —
 # do not let anything silently auto-map an unfamiliar label.
+
+# LABEL_TO_KEY: dict[str, LineItemKey] = {
+#     "درآمدهاي عملياتي": LineItemKey.REVENUE,
+#     "بهاى تمام شده درآمدهاي عملياتي": LineItemKey.COST_OF_REVENUE,
+#     "سود(زيان) ناخالص": LineItemKey.GROSS_PROFIT,
+#     "سود(زيان) عملياتى": LineItemKey.OPERATING_INCOME,
+#     "سود(زيان) خالص": LineItemKey.NET_INCOME,
+#     "جمع دارايي‌ها": LineItemKey.TOTAL_ASSETS,
+#     "جمع بدهي‌ها": LineItemKey.TOTAL_LIABILITIES,
+#     "جمع حقوق مالکانه": LineItemKey.TOTAL_EQUITY,
+#     "موجودي نقد": LineItemKey.CASH_AND_EQUIVALENTS,
+#     "جريان ‌خالص ‌ورود‌ (خروج) ‌نقد حاصل از فعاليت‌هاي ‌عملياتي": LineItemKey.OPERATING_CASH_FLOW,
+#     "پرداخت‌هاي نقدي براي خريد دارايي‌هاي ثابت مشهود": LineItemKey.CAPEX,
+# }
+
 LABEL_TO_KEY: dict[str, LineItemKey] = {
     "درآمدهاي عملياتي": LineItemKey.REVENUE,
     "بهاى تمام شده درآمدهاي عملياتي": LineItemKey.COST_OF_REVENUE,
     "سود(زيان) ناخالص": LineItemKey.GROSS_PROFIT,
+    "هزينه‏هاى فروش، ادارى و عمومى": LineItemKey.SG_AND_A,
+    "هزينه کاهش ارزش دريافتني‏ها (هزينه استثنايي)": LineItemKey.IMPAIRMENT_EXPENSE,
+    "ساير درآمدها": LineItemKey.OTHER_OPERATING_INCOME,
+    "ساير هزينه‌ها": LineItemKey.OTHER_OPERATING_EXPENSE,
     "سود(زيان) عملياتى": LineItemKey.OPERATING_INCOME,
+    "هزينه‏هاى مالى": LineItemKey.FINANCIAL_EXPENSE,
+    "ساير درآمدها و هزينه‏هاى غيرعملياتى": LineItemKey.OTHER_NON_OPERATING_INCOME_EXPENSE,
+    "سهم گروه از سود شرکت‌هاي وابسته": LineItemKey.SHARE_OF_ASSOCIATES_INCOME,
+    "سود(زيان) عمليات در حال تداوم قبل از ماليات": LineItemKey.PRETAX_INCOME_CONTINUING_OPS,
+    "هزينه ماليات بر درآمد": LineItemKey.INCOME_TAX_EXPENSE,
+    "سود(زيان) خالص عمليات در حال تداوم": LineItemKey.NET_INCOME_CONTINUING_OPS,
+    "سود (زيان) خالص عمليات متوقف شده": LineItemKey.NET_INCOME_DISCONTINUED_OPS,
     "سود(زيان) خالص": LineItemKey.NET_INCOME,
     "جمع دارايي‌ها": LineItemKey.TOTAL_ASSETS,
     "جمع بدهي‌ها": LineItemKey.TOTAL_LIABILITIES,
@@ -36,6 +62,7 @@ LABEL_TO_KEY: dict[str, LineItemKey] = {
     "جريان ‌خالص ‌ورود‌ (خروج) ‌نقد حاصل از فعاليت‌هاي ‌عملياتي": LineItemKey.OPERATING_CASH_FLOW,
     "پرداخت‌هاي نقدي براي خريد دارايي‌هاي ثابت مشهود": LineItemKey.CAPEX,
 }
+
 
 # Normalized-key index, built once at import time, so lookups are
 # insensitive to Arabic/Persian codepoint variants and ZWNJ differences.

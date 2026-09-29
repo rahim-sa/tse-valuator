@@ -1,3 +1,16 @@
+# SCOPE: this schema targets non-financial companies (industrials,
+# materials, consumer, etc.). Banks, insurers, and other financial
+# institutions have fundamentally different statement structures
+# (loans/deposits as core business, not financing; loan-loss
+# provisions; no "cost of revenue" concept) and are NOT supported --
+# confirmed by testing against a real Bank Mellat filing, which mapped
+# only 7/416 labels. Financial institutions would need their own
+# schema and likely a different valuation methodology entirely
+# (dividend discount / excess-return / P-B multiples rather than
+# unlevered FCFF DCF). Out of scope for now; revisit deliberately if
+# needed later.
+
+
 """
 Normalized financial statement schema.
 
@@ -35,17 +48,28 @@ class PeriodType(str, Enum):
 
 class LineItemKey(str, Enum):
     """
-    Canonical taxonomy. This is our stand-in for an XBRL taxonomy —
+    Canonical taxonomy. This is our stand-in for an XBRL taxonomy --
     since Codal has none, WE define the controlled vocabulary that every
-    extracted line item must map into. Starting minimal; we extend this
-    enum deliberately, not by letting the LLM invent new keys.
+    extracted line item must map into. Extended based on real coverage
+    testing against شپدیس (petrochemicals) and فولاد (steel) filings.
     """
     REVENUE = "revenue"
     COST_OF_REVENUE = "cost_of_revenue"
     GROSS_PROFIT = "gross_profit"
-    OPERATING_EXPENSES = "operating_expenses"
+    SG_AND_A = "sg_and_a"
+    IMPAIRMENT_EXPENSE = "impairment_expense"
+    OTHER_OPERATING_INCOME = "other_operating_income"
+    OTHER_OPERATING_EXPENSE = "other_operating_expense"
     OPERATING_INCOME = "operating_income"
+    FINANCIAL_EXPENSE = "financial_expense"
+    OTHER_NON_OPERATING_INCOME_EXPENSE = "other_non_operating_income_expense"
+    SHARE_OF_ASSOCIATES_INCOME = "share_of_associates_income"
+    PRETAX_INCOME_CONTINUING_OPS = "pretax_income_continuing_ops"
+    INCOME_TAX_EXPENSE = "income_tax_expense"
+    NET_INCOME_CONTINUING_OPS = "net_income_continuing_ops"
+    NET_INCOME_DISCONTINUED_OPS = "net_income_discontinued_ops"
     NET_INCOME = "net_income"
+    NET_INCOME_ATTRIBUTABLE_TO_OWNERS = "net_income_attributable_to_owners"
 
     TOTAL_ASSETS = "total_assets"
     TOTAL_LIABILITIES = "total_liabilities"
@@ -54,7 +78,6 @@ class LineItemKey(str, Enum):
 
     OPERATING_CASH_FLOW = "operating_cash_flow"
     CAPEX = "capex"
-
 
 class SourceCitation(BaseModel):
     """Provenance for a single extracted value — mandatory, not optional."""
