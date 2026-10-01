@@ -77,3 +77,59 @@ def get_usd_irr_rate(jalali_date: str, rate_type: str = "sell", window_days: int
                 return toman_value * TOMAN_TO_RIAL
 
     raise FxDataUnavailableError(jalali_date, window_days)
+
+def get_average_usd_irr_rate(
+    start_jalali_date: str, end_jalali_date: str, rate_type: str = "sell"
+) -> float:
+    """
+    Returns the average USD/IRR rate (in RIAL) over a date range.
+
+    Used for converting FLOW items (revenue, cash flow, net income) to
+    USD -- unlike point-in-time items (cash, debt), a flow accumulated
+    continuously over a period should be converted at the average rate
+    over that period, not a single snapshot (this follows standard
+    accounting practice for foreign currency translation, e.g. IAS 21 /
+    ASC 830). Using a single period-END rate for a flow item
+    significantly misstates it when the currency moved a lot during
+    the period -- confirmed in testing: Iran's rial moved ~2.5x in one
+    year, so this distinction is not a minor technicality here.
+    """
+    start_y, start_m, start_d = (int(p) for p in start_jalali_date.split("/"))
+    end_y, end_m, end_d = (int(p) for p in end_jalali_date.split("/"))
+
+    start = jdatetime.date(start_y, start_m, start_d)
+    end = jdatetime.date(end_y, end_m, end_d)
+
+    if start > end:
+        raise ValueError("start_jalali_date must be before end_jalali_date")
+
+    rates: list[float] = []
+    current_month_start = jdatetime.date(start.year, start.month, 1)
+
+    while current_month_start <= end:
+        try:
+            month_data = _fetch_month(current_month_start.year, current_month_start.month)
+        except requests.exceptions.HTTPError:
+            # advance to next month even if this one is unavailable --
+            # we average over whatever data genuinely exists
+            current_month_start = _next_month(current_month_start)
+            continue
+
+        for date_key, entry in month_data.items():
+            y, m, d = (int(p) for p in date_key.split("/"))
+            day = jdatetime.date(y, m, d)
+            if start <= day <= end:
+                rates.append(entry["usd"][rate_type] * TOMAN_TO_RIAL)
+
+        current_month_start = _next_month(current_month_start)
+
+    if not rates:
+        raise FxDataUnavailableError(f"{start_jalali_date} to {end_jalali_date}", window_days=0)
+
+    return sum(rates) / len(rates)
+
+
+def _next_month(d: "jdatetime.date") -> "jdatetime.date":
+    if d.month == 12:
+        return jdatetime.date(d.year + 1, 1, 1)
+    return jdatetime.date(d.year, d.month + 1, 1)
