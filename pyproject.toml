@@ -11,6 +11,7 @@ dependencies = [
     "lxml<6.0",
     "openpyxl>=3.1.5",
     "pydantic>=2.13.5",
+    "pytse-client>=0.19.1",
     "requests>=2.34.2",
 ]
 
