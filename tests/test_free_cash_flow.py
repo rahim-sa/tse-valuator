@@ -87,3 +87,34 @@ def test_extract_fcf_inputs_normalizes_capex_to_positive():
     fcf_inputs = extract_fcf_inputs(result.statement, tax_rate=0.25)
     assert fcf_inputs.capex > 0
     assert fcf_inputs.capex == pytest.approx(2_693_532)
+
+
+def test_extract_fcf_inputs_treats_missing_da_as_zero_not_error():
+    """
+    Regression test: an asset-light company (e.g. خصدرا, a contracting
+    company) may have no D&A line at all -- this is a legitimate
+    business characteristic, not missing data, and must default to 0
+    rather than raise an error.
+    """
+    from tse_valuator.ingestion.codal_client import search_filings, download_filing_excel
+    from tse_valuator.ingestion.statement_builder import build_normalized_statement
+    from tse_valuator.ingestion.schema import ConsolidationBasis, FiscalPeriod, PeriodType, StatementType
+    from datetime import date
+
+    filings = search_filings("خصدرا", from_jdate="1404/01/01")
+    target = next(
+        f for f in filings
+        if "۱۴۰۴/۱۲/۲۹" in f.title and "حسابرسی شده" in f.title and "نشده" not in f.title
+    )
+    html_bytes = download_filing_excel(target.excel_url)
+    period = FiscalPeriod(
+        period_type=PeriodType.ANNUAL, jalali_year=1404,
+        jalali_end_date="1404/12/29", gregorian_end_date=date(2026, 3, 20),
+    )
+    result = build_normalized_statement(
+        html_bytes=html_bytes, filing_url=target.excel_url, symbol_fa="خصدرا",
+        company_name_fa=target.company_name, statement_type=StatementType.INCOME_STATEMENT,
+        consolidation_basis=ConsolidationBasis.CONSOLIDATED, period=period,
+    )
+    fcf_inputs = extract_fcf_inputs(result.statement, tax_rate=0.25)
+    assert fcf_inputs.depreciation_amortization == 0.0
