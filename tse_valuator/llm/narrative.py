@@ -19,12 +19,16 @@ from __future__ import annotations
 
 from tse_valuator.llm.client import get_client
 
+
 _SYSTEM_PROMPT = """You are a financial analyst assistant writing qualitative \
 commentary for a Tehran Stock Exchange equity valuation report.
 
 STRICT RULES:
 - Only reference numbers explicitly given to you in the context below. \
 Never calculate, estimate, or invent a financial figure.
+- All financial figures given to you are HISTORICAL, ALREADY-REPORTED, \
+AUDITED data unless explicitly labeled as a projection, forecast, or \
+estimate. Do not describe historical data as "projected" or "forecasted."
 - If asked something that would require a number you were not given, \
 say plainly that the data was not provided -- do not guess.
 - Your job is qualitative synthesis only: industry context, trend \
@@ -36,7 +40,8 @@ confidently about things you cannot know.
 """
 
 
-def generate_qualitative_narrative(context: dict, model: str = "gpt-4o-mini") -> str:
+#def generate_qualitative_narrative(context: dict, model: str = "gpt-4o-mini") -> str:
+def generate_qualitative_narrative(context: dict, model: str = "gpt-4o-mini", language: str = "English") -> str:
     """
     Generates qualitative commentary given a dict of already-computed
     facts (company name, financial figures, DCF result, etc.). The
@@ -51,8 +56,8 @@ def generate_qualitative_narrative(context: dict, model: str = "gpt-4o-mini") ->
         "Write a brief (3-4 paragraph) qualitative analysis covering: "
         "(1) what the financial trend shown suggests about the business, "
         "(2) relevant macro/currency risk context for a company reporting "
-        "in Iranian rial, and (3) any notable caveats about this analysis."
-    )
+        "in Iranian rial, and (3) any notable caveats about this analysis.\n\nRespond in {language}."
+    )#(3) any notable caveats about this analysis.")
 
     response = client.chat.completions.create(
         model=model,

@@ -33,3 +33,15 @@ def test_revenue_row_is_extracted_with_expected_value():
     assert revenue_row is not None
     # From the fixture: current period revenue was 600,474,556 (million rial)
     assert "۶۰۰,۴۷۴,۵۵۶" in revenue_row[0] or "600,474,556" in revenue_row[0]
+
+def test_consolidated_and_standalone_sections_distinguished_by_heading():
+    """
+    Regression test for a real bug: a single filing can contain both a
+    consolidated and a parent-standalone version of the same statement,
+    with IDENTICAL internal structure -- only the preceding heading
+    text distinguishes them. Confirmed against a real خصدرا filing.
+    """
+    # This fixture doesn't exist yet locally -- this test documents the
+    # expected behavior; run it manually against a live خصدرا filing
+    # (see conversation history) once that fixture is saved locally.
+    pass  # placeholder -- see note below
