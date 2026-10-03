@@ -24,7 +24,9 @@ from tse_valuator.valuation.free_cash_flow import extract_fcf_inputs, unlevered_
 from tse_valuator.valuation.wacc import cost_of_equity, wacc
 from tse_valuator.valuation.dcf import enterprise_value
 from tse_valuator.valuation.equity_bridge import equity_value, value_per_share
+from tse_valuator.valuation.currency_adjust import deflate_to_real
 from tse_valuator.macro.fx_client import get_usd_irr_rate, get_average_usd_irr_rate
+from tse_valuator.macro.cpi_client import fetch_iran_cpi_annual
 from tse_valuator.macro.country_risk_client import fetch_country_risk_premium
 from tse_valuator.macro.tsetmc_client import get_current_market_data
 
@@ -85,6 +87,40 @@ def _fetch_statement(filing, jy: int, jm: int, jd: int, gdate: date, symbol: str
     return result.statement
 
 
+def _build_cpi_series_with_extrapolation(years_needed: list[int]) -> dict[int, float]:
+    """
+    Fetches the live CPI series and extrapolates forward for any
+    requested year not yet published (World Bank data has a publication
+    lag, so the current/most recent fiscal year is often not yet
+    available). Extrapolation uses the latest known annual inflation
+    rate -- freezing at the last known value would wrongly imply 0%
+    inflation for the gap, which would silently defeat any real-terms
+    adjustment relying on this series.
+    """
+    cpi_series = fetch_iran_cpi_annual(start_year=2015, end_year=2027)
+    latest_available_year = max(cpi_series.keys())
+    second_latest_year = latest_available_year - 1
+
+    if second_latest_year not in cpi_series:
+        raise ValueError("Need at least 2 years of CPI data to extrapolate a missing year")
+
+    latest_known_inflation = cpi_series[latest_available_year] / cpi_series[second_latest_year] - 1
+
+    def _cpi_for_year(year: int) -> float:
+        if year in cpi_series:
+            return cpi_series[year]
+        years_ahead = year - latest_available_year
+        return cpi_series[latest_available_year] * (1 + latest_known_inflation) ** years_ahead
+
+    extended = dict(cpi_series)
+    for y in years_needed:
+        if y not in extended:
+            extended[y] = _cpi_for_year(y)
+            print(f"[note] CPI for {y} not yet published; extrapolated using {latest_known_inflation:.1%} latest known inflation rate")
+
+    return extended
+
+
 def run_dcf_valuation(
     symbol: str,
     fiscal_year_jalali: int,
@@ -99,8 +135,7 @@ def run_dcf_valuation(
     Runs a complete DCF valuation for a TSE symbol, using live Codal
     financial data, live FX/CPI/country-risk data, and live TSETMC
     market data. Fiscal period dates must be supplied explicitly (not
-    auto-detected) since filing title parsing is not yet automated --
-    see scratch-script history for why this is deliberately manual for now.
+    auto-detected) since filing title parsing is not yet automated.
     """
     assumptions = assumptions or DcfAssumptions()
 
@@ -125,7 +160,24 @@ def run_dcf_valuation(
 
     fcf_current = extract_fcf_inputs(stmt_current, tax_rate=assumptions.tax_rate)
     fcf_prior = extract_fcf_inputs(stmt_prior, tax_rate=assumptions.tax_rate)
-    base_fcf_rial_millions = unlevered_fcf(fcf_current, prior_nwc=fcf_prior.net_working_capital)
+
+    # Deflate working capital to a common real basis before computing the
+    # change -- in a 60-80% inflation environment, raw nominal NWC growth
+    # vastly overstates real cash consumption (confirmed: this made FCF
+    # spuriously negative for both خصدرا and بترانس).
+    current_year = fiscal_gregorian_date.year
+    prior_year = prior_fiscal_gregorian_date.year
+    cpi_series = _build_cpi_series_with_extrapolation([current_year, prior_year])
+
+    real_nwc_current = deflate_to_real(
+        fcf_current.net_working_capital, from_year=current_year, to_base_year=current_year, cpi_series=cpi_series
+    )
+    real_nwc_prior = deflate_to_real(
+        fcf_prior.net_working_capital, from_year=prior_year, to_base_year=current_year, cpi_series=cpi_series
+    )
+
+    fcf_current.net_working_capital = real_nwc_current
+    base_fcf_rial_millions = unlevered_fcf(fcf_current, prior_nwc=real_nwc_prior)
 
     fiscal_start = f"{prior_fiscal_year_jalali}/{(fiscal_month % 12) + 1:02d}/01"
     fiscal_end = f"{fiscal_year_jalali}/{fiscal_month:02d}/{fiscal_day:02d}"
