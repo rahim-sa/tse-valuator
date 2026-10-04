@@ -49,6 +49,7 @@ class DcfValuationResult:
     symbol: str
     base_fcf_rial_millions: float
     base_fcf_usd: float
+    fcf_years_used: list[int]
     avg_fx_rate: float
     period_end_fx_rate: float
     fx_rate_today: float
@@ -66,11 +67,12 @@ class DcfValuationResult:
 
 
 class InsufficientFilingDataError(Exception):
-    """Raised when fewer than 2 annual filings are found -- unlevered_fcf
-    needs a prior-year NWC figure, so a single year isn't enough."""
-    def __init__(self, symbol: str, found: int):
+    """Raised when fewer annual filings are found than needed.
+    Computing N years of FCF requires N+1 statements (each FCF needs
+    the PRIOR year's net working capital)."""
+    def __init__(self, symbol: str, found: int, needed: int):
         self.symbol = symbol
-        super().__init__(f"Need at least 2 annual consolidated filings for {symbol}, found {found}")
+        super().__init__(f"Need at least {needed} annual consolidated filings for {symbol}, found {found}")
 
 
 def _fetch_statement(filing, jy: int, jm: int, jd: int, gdate: date, symbol: str) -> NormalizedStatement:
@@ -91,11 +93,9 @@ def _build_cpi_series_with_extrapolation(years_needed: list[int]) -> dict[int, f
     """
     Fetches the live CPI series and extrapolates forward for any
     requested year not yet published (World Bank data has a publication
-    lag, so the current/most recent fiscal year is often not yet
-    available). Extrapolation uses the latest known annual inflation
-    rate -- freezing at the last known value would wrongly imply 0%
-    inflation for the gap, which would silently defeat any real-terms
-    adjustment relying on this series.
+    lag). Extrapolation uses the latest known annual inflation rate --
+    freezing at the last known value would wrongly imply 0% inflation
+    for the gap.
     """
     cpi_series = fetch_iran_cpi_annual(start_year=2015, end_year=2027)
     latest_available_year = max(cpi_series.keys())
@@ -121,6 +121,16 @@ def _build_cpi_series_with_extrapolation(years_needed: list[int]) -> dict[int, f
     return extended
 
 
+def _approx_gregorian(base_gregorian: date, year_offset: int) -> date:
+    """Approximates a Gregorian date N years before/after a given one,
+    for the purpose of CPI year lookups -- exact day precision doesn't
+    matter here, only the calendar year."""
+    try:
+        return base_gregorian.replace(year=base_gregorian.year + year_offset)
+    except ValueError:
+        return base_gregorian.replace(year=base_gregorian.year + year_offset, day=28)
+
+
 def run_dcf_valuation(
     symbol: str,
     fiscal_year_jalali: int,
@@ -130,16 +140,23 @@ def run_dcf_valuation(
     prior_fiscal_year_jalali: int,
     prior_fiscal_gregorian_date: date,
     assumptions: DcfAssumptions | None = None,
+    num_base_fcf_years: int = 1,
 ) -> DcfValuationResult:
     """
     Runs a complete DCF valuation for a TSE symbol, using live Codal
     financial data, live FX/CPI/country-risk data, and live TSETMC
-    market data. Fiscal period dates must be supplied explicitly (not
-    auto-detected) since filing title parsing is not yet automated.
+    market data.
+
+    num_base_fcf_years: how many years of real (CPI-deflated) FCF to
+    average as the DCF's base year, instead of using a single year.
+    Default 1 preserves prior behavior. Averaging guards against a
+    single unusual year (e.g. a one-off working-capital swing)
+    dominating the entire multi-year projection.
     """
     assumptions = assumptions or DcfAssumptions()
+    num_statements_needed = num_base_fcf_years + 1
 
-    filings = search_filings(symbol, from_jdate="1401/01/01")
+    filings = search_filings(symbol, from_jdate="1399/01/01")
     annual = [
         f for f in filings
         if "سال مالی" in f.title and "میاندوره" not in f.title
@@ -148,39 +165,46 @@ def run_dcf_valuation(
     ]
     annual_sorted = sorted(annual, key=lambda f: f.title, reverse=True)
 
-    if len(annual_sorted) < 2:
-        raise InsufficientFilingDataError(symbol, len(annual_sorted))
+    if len(annual_sorted) < num_statements_needed:
+        raise InsufficientFilingDataError(symbol, len(annual_sorted), num_statements_needed)
 
-    stmt_current = _fetch_statement(
-        annual_sorted[0], fiscal_year_jalali, fiscal_month, fiscal_day, fiscal_gregorian_date, symbol
-    )
-    stmt_prior = _fetch_statement(
-        annual_sorted[1], prior_fiscal_year_jalali, fiscal_month, fiscal_day, prior_fiscal_gregorian_date, symbol
-    )
+    statements = []
+    for i in range(num_statements_needed):
+        jy = fiscal_year_jalali - i
+        gdate = _approx_gregorian(fiscal_gregorian_date, -i)
+        stmt = _fetch_statement(annual_sorted[i], jy, fiscal_month, fiscal_day, gdate, symbol)
+        statements.append((jy, gdate, stmt))
 
-    fcf_current = extract_fcf_inputs(stmt_current, tax_rate=assumptions.tax_rate)
-    fcf_prior = extract_fcf_inputs(stmt_prior, tax_rate=assumptions.tax_rate)
+    years_needed = [gdate.year for _, gdate, _ in statements]
+    cpi_series = _build_cpi_series_with_extrapolation(years_needed)
+    base_year = statements[0][1].year
 
-    # Deflate working capital to a common real basis before computing the
-    # change -- in a 60-80% inflation environment, raw nominal NWC growth
-    # vastly overstates real cash consumption (confirmed: this made FCF
-    # spuriously negative for both خصدرا and بترانس).
-    current_year = fiscal_gregorian_date.year
-    prior_year = prior_fiscal_gregorian_date.year
-    cpi_series = _build_cpi_series_with_extrapolation([current_year, prior_year])
+    real_fcf_values = []
+    for i in range(num_base_fcf_years):
+        jy_current, gdate_current, stmt_current = statements[i]
+        jy_prior, gdate_prior, stmt_prior = statements[i + 1]
 
-    real_nwc_current = deflate_to_real(
-        fcf_current.net_working_capital, from_year=current_year, to_base_year=current_year, cpi_series=cpi_series
-    )
-    real_nwc_prior = deflate_to_real(
-        fcf_prior.net_working_capital, from_year=prior_year, to_base_year=current_year, cpi_series=cpi_series
-    )
+        fcf_current = extract_fcf_inputs(stmt_current, tax_rate=assumptions.tax_rate)
+        fcf_prior = extract_fcf_inputs(stmt_prior, tax_rate=assumptions.tax_rate)
 
-    fcf_current.net_working_capital = real_nwc_current
-    base_fcf_rial_millions = unlevered_fcf(fcf_current, prior_nwc=real_nwc_prior)
+        real_nwc_current = deflate_to_real(
+            fcf_current.net_working_capital, from_year=gdate_current.year, to_base_year=base_year, cpi_series=cpi_series
+        )
+        real_nwc_prior = deflate_to_real(
+            fcf_prior.net_working_capital, from_year=gdate_prior.year, to_base_year=base_year, cpi_series=cpi_series
+        )
+        fcf_current.net_working_capital = real_nwc_current
+        nominal_fcf = unlevered_fcf(fcf_current, prior_nwc=real_nwc_prior)
 
-    fiscal_start = f"{prior_fiscal_year_jalali}/{(fiscal_month % 12) + 1:02d}/01"
+        real_fcf = deflate_to_real(nominal_fcf, from_year=gdate_current.year, to_base_year=base_year, cpi_series=cpi_series)
+        real_fcf_values.append((jy_current, real_fcf))
+
+    base_fcf_rial_millions = sum(v for _, v in real_fcf_values) / len(real_fcf_values)
+    fcf_years_used = [jy for jy, _ in real_fcf_values]
+
+    stmt_current = statements[0][2]
     fiscal_end = f"{fiscal_year_jalali}/{fiscal_month:02d}/{fiscal_day:02d}"
+    fiscal_start = f"{prior_fiscal_year_jalali}/{(fiscal_month % 12) + 1:02d}/01"
     avg_fx_rate = get_average_usd_irr_rate(fiscal_start, fiscal_end)
     period_end_fx_rate = get_usd_irr_rate(fiscal_end)
     today_jalali = jdatetime.date.today().strftime("%Y/%m/%d")
@@ -221,6 +245,7 @@ def run_dcf_valuation(
         symbol=symbol,
         base_fcf_rial_millions=base_fcf_rial_millions,
         base_fcf_usd=base_fcf_usd,
+        fcf_years_used=fcf_years_used,
         avg_fx_rate=avg_fx_rate,
         period_end_fx_rate=period_end_fx_rate,
         fx_rate_today=fx_rate_today,

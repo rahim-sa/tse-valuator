@@ -54,3 +54,13 @@ def test_convert_rial_to_usd_basic():
 def test_convert_rial_to_usd_rejects_non_positive_rate():
     with pytest.raises(ValueError):
         convert_rial_to_usd(1000, usd_irr_rate=0)
+
+def test_deflate_handles_decreasing_cpi_correctly():
+    # Deflation (CPI falling between years) is rare but our function
+    # shouldn't assume inflation only moves one direction -- the math
+    # (a ratio) is direction-agnostic by construction, confirm it holds.
+    cpi_series = {2020: 120.0, 2021: 100.0}  # CPI fell
+    result = deflate_to_real(1000, from_year=2020, to_base_year=2021, cpi_series=cpi_series)
+    expected = 1000 * (100.0 / 120.0)
+    assert result == pytest.approx(expected)
+    assert result < 1000  # value should shrink since base-year prices were lower

@@ -118,3 +118,18 @@ def test_extract_fcf_inputs_treats_missing_da_as_zero_not_error():
     )
     fcf_inputs = extract_fcf_inputs(result.statement, tax_rate=0.25)
     assert fcf_inputs.depreciation_amortization == 0.0
+
+def test_unlevered_fcf_with_negative_operating_income():
+    # A company reporting an operating LOSS -- tax shield math should
+    # still apply mechanically (negative EBIT * (1-tax) stays negative,
+    # no special-casing), not produce a nonsensical sign flip.
+    inputs = FcfInputs(
+        operating_income=-500,
+        tax_rate=0.25,
+        depreciation_amortization=100,
+        capex=50,
+        net_working_capital=200,
+    )
+    result = unlevered_fcf(inputs, prior_nwc=200)
+    # NOPAT = -500 * 0.75 = -375; +100 D&A; -50 capex; -0 NWC change = -325
+    assert result == pytest.approx(-325)
