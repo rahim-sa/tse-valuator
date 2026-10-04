@@ -156,7 +156,7 @@ def run_dcf_valuation(
     assumptions = assumptions or DcfAssumptions()
     num_statements_needed = num_base_fcf_years + 1
 
-    filings = search_filings(symbol, from_jdate="1399/01/01")
+    filings = search_filings(symbol, from_jdate="1401/01/01")
     annual = [
         f for f in filings
         if "سال مالی" in f.title and "میاندوره" not in f.title
