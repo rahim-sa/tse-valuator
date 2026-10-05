@@ -67,9 +67,28 @@ def extract_fcf_inputs(statement: NormalizedStatement, tax_rate: float) -> FcfIn
     MissingLineItemError immediately if anything essential is absent
     -- never substituting zero for a missing value.
     """
+    # required = {
+    #     LineItemKey.OPERATING_INCOME: "operating_income",
+    #     LineItemKey.DEPRECIATION_AMORTIZATION: "depreciation_amortization",
+    #     LineItemKey.CAPEX: "capex",
+    #     LineItemKey.TRADE_RECEIVABLES: "receivables",
+    #     LineItemKey.INVENTORY: "inventory",
+    #     LineItemKey.TRADE_PAYABLES: "payables",
+    # }
+    # values = {}
+    # for key, _ in required.items():
+    #     item = statement.get(key)
+    #     if item is None or item.value_rial is None:
+    #         raise MissingLineItemError(key, statement.symbol_fa, statement.period.jalali_year)
+    #     values[key] = item.value_rial
+
+    # D&A is treated as OPTIONAL, defaulting to 0 when genuinely absent --
+    # confirmed via real testing that asset-light companies (e.g. a
+    # contracting company, خصدرا) may have no depreciation note at all,
+    # which is a legitimate business characteristic, not a data gap.
+    # Every other item here remains required and strict.
     required = {
         LineItemKey.OPERATING_INCOME: "operating_income",
-        LineItemKey.DEPRECIATION_AMORTIZATION: "depreciation_amortization",
         LineItemKey.CAPEX: "capex",
         LineItemKey.TRADE_RECEIVABLES: "receivables",
         LineItemKey.INVENTORY: "inventory",
@@ -81,6 +100,11 @@ def extract_fcf_inputs(statement: NormalizedStatement, tax_rate: float) -> FcfIn
         if item is None or item.value_rial is None:
             raise MissingLineItemError(key, statement.symbol_fa, statement.period.jalali_year)
         values[key] = item.value_rial
+
+    da_item = statement.get(LineItemKey.DEPRECIATION_AMORTIZATION)
+    depreciation_amortization = da_item.value_rial if (da_item and da_item.value_rial is not None) else 0.0
+
+    
 
     nwc = net_working_capital(
         receivables=values[LineItemKey.TRADE_RECEIVABLES],
@@ -98,7 +122,8 @@ def extract_fcf_inputs(statement: NormalizedStatement, tax_rate: float) -> FcfIn
     return FcfInputs(
         operating_income=values[LineItemKey.OPERATING_INCOME],
         tax_rate=tax_rate,
-        depreciation_amortization=values[LineItemKey.DEPRECIATION_AMORTIZATION],
+        #depreciation_amortization=values[LineItemKey.DEPRECIATION_AMORTIZATION],
+        depreciation_amortization=depreciation_amortization,
         capex=abs(values[LineItemKey.CAPEX]),
         net_working_capital=nwc,
     )

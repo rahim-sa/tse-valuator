@@ -1,49 +1,70 @@
 """
-Parses Codal's "Excel" export — which is actually an HTML file using
+Parses Codal's "Excel" export -- which is actually an HTML file using
 Microsoft's legacy "Excel Workbook Frameset" format, not a real .xlsx
 (ZIP) file. This is why openpyxl can't open it directly; we treat it
 as HTML.
 
-This module's job stops at: raw label -> raw value pairs, grouped by
-statement section. It does NOT map labels to our canonical LineItemKey
-enum — that mapping lives in a separate step (label_mapper.py, not yet
-written), since it's the part that may need LLM help for label variants
-we haven't seen yet.
+IMPORTANT: Codal filings commonly contain BOTH a consolidated and a
+parent-company-standalone version of each statement, as separate
+tables with IDENTICAL internal structure and no distinguishing text
+inside the table itself -- confirmed against a real خصدرا filing,
+where two income statement tables returned different revenue figures
+and were indistinguishable without looking at the HEADING TEXT
+immediately preceding each table.
+
+KNOWN LIMITATION: some older filings (confirmed: بترانس fiscal year
+1402) bunch all statement-name headings together near the document's
+start (like a table of contents) instead of placing them individually
+before each table -- for these filings, heading_fa will incorrectly
+show generic disclaimer text instead of the real statement name, and
+is_consolidated will be unreliable. A fix was attempted (positional
+pairing of headings-list order with table order) but found to be
+incorrect, since the two orderings don't actually match in at least
+one real case -- reverted rather than ship broken logic. Revisit with
+a content-based matching approach (matching each table's row labels
+against expected statement-type signatures) if this needs solving.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 
 
 @dataclass
 class RawStatementSection:
-    """One statement (income statement, balance sheet, etc.) as raw,
-    unmapped label -> value rows, exactly as Codal labeled them."""
     title_fa: str
+    heading_fa: str
     column_headers: list[str]
     rows: dict[str, list[str]] = field(default_factory=dict)
 
+    @property
+    def is_consolidated(self) -> bool:
+        return "تلفیقی" in self.heading_fa or "تلفيقي" in self.heading_fa
+
 
 def parse_codal_excel_export(html_bytes: bytes) -> list[RawStatementSection]:
-    """
-    Parses a Codal 'Excel' export (actually HTML) into a list of raw
-    statement sections. Each <table> in the file corresponds to one
-    statement (income statement, balance sheet, cash flow, etc.)
-    """
     soup = BeautifulSoup(html_bytes, "lxml")
     sections: list[RawStatementSection] = []
 
-    for table in soup.find_all("table"):
+    current_heading = ""
+
+    for element in soup.find_all(True):
+        if element.name != "table":
+            if isinstance(element, NavigableString):
+                continue
+            if not element.find_all():
+                text = element.get_text(strip=True)
+                if text and len(text) < 100:
+                    current_heading = text
+            continue
+
+        table = element
         rows = table.find_all("tr")
         if not rows:
             continue
 
-        # First non-empty row is treated as the header row (column labels).
-        # Codal's tables are inconsistent about exactly where the header
-        # sits, so we take the first row with more than one populated cell.
         header_cells: list[str] = []
         data_start_idx = 0
         for i, row in enumerate(rows):
@@ -59,6 +80,7 @@ def parse_codal_excel_export(html_bytes: bytes) -> list[RawStatementSection]:
 
         section = RawStatementSection(
             title_fa=header_cells[0] if header_cells else "",
+            heading_fa=current_heading,
             column_headers=header_cells[1:],
         )
 

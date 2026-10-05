@@ -51,8 +51,40 @@ def build_normalized_statement(
     #now = datetime.utcnow()
     now = datetime.now(timezone.utc)
 
-    for section in sections:
+    # wants_consolidated = consolidation_basis == ConsolidationBasis.CONSOLIDATED
+    # relevant_sections = [s for s in sections if s.is_consolidated == wants_consolidated]
+
+    wants_consolidated = consolidation_basis == ConsolidationBasis.CONSOLIDATED
+
+    # Only filter out a section if a genuine duplicate (same heading,
+    # opposite consolidation basis) exists elsewhere in the document --
+    # supplementary notes (e.g. depreciation breakdown) are never
+    # duplicated and have no "تلفیقی" qualifier, so they must always
+    # be kept regardless of this filter.
+    def _stripped_heading(h: str) -> str:
+        return h.replace("تلفیقی", "").replace("تلفيقي", "").strip()
+
+    heading_groups: dict[str, list] = {}
+    for s in sections:
+        heading_groups.setdefault(_stripped_heading(s.heading_fa), []).append(s)
+
+    relevant_sections = []
+    for s in sections:
+        group = heading_groups[_stripped_heading(s.heading_fa)]
+        has_genuine_duplicate = len(group) > 1 and any(
+            other.is_consolidated != s.is_consolidated for other in group
+        )
+        if has_genuine_duplicate:
+            if s.is_consolidated == wants_consolidated:
+                relevant_sections.append(s)
+        else:
+            relevant_sections.append(s)
+
+    for section in relevant_sections:
         for label, values in section.rows.items():
+    
+    # for section in sections:
+    #     for label, values in section.rows.items():
             key = try_map_label(label)
             if key is None:
                 unmapped_labels.append(label)

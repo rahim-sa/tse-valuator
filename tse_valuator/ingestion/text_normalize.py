@@ -54,3 +54,15 @@ def normalize_fa(text: str) -> str:
     text = _WHITESPACE_RE.sub("", text)  # strip ALL whitespace, not just collapse
 
     return text
+
+def normalize_fa_chars_only(text: str) -> str:
+    """
+    Like normalize_fa, but keeps whitespace/spacing intact -- used for
+    searching for multi-word headings in running text, where word
+    boundaries matter, unlike label-matching where they don't.
+    """
+    for arabic_char, persian_char in _CHAR_MAP.items():
+        text = text.replace(arabic_char, persian_char)
+    for invisible in _INVISIBLE_CHARS:
+        text = text.replace(invisible, "")
+    return text

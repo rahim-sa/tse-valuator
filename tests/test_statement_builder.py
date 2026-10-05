@@ -70,3 +70,34 @@ def test_dcf_critical_items_are_mapped():
     ]:
         item = result.statement.get(key)
         assert item is not None, f"{key} not found in statement"
+
+def test_khodro_consolidated_revenue_excludes_standalone_duplicate():
+    """
+    Regression test for a real bug found in خصدرا's filings: a single
+    filing contains both a consolidated and standalone income
+    statement table with identical structure. Without filtering by
+    heading, both "درآمدهاي عملياتي" rows were picked up, giving two
+    different answers for the same canonical line item.
+    """
+    from tse_valuator.ingestion.codal_client import search_filings, download_filing_excel
+
+    filings = search_filings("خصدرا", from_jdate="1404/01/01")
+    target = next(
+        f for f in filings
+        if "۱۴۰۴/۱۲/۲۹" in f.title and "حسابرسی شده" in f.title and "نشده" not in f.title
+    )
+    html_bytes = download_filing_excel(target.excel_url)
+
+    period = FiscalPeriod(
+        period_type=PeriodType.ANNUAL, jalali_year=1404,
+        jalali_end_date="1404/12/29", gregorian_end_date=date(2026, 3, 20),
+    )
+    result = build_normalized_statement(
+        html_bytes=html_bytes, filing_url=target.excel_url, symbol_fa="خصدرا",
+        company_name_fa=target.company_name, statement_type=StatementType.INCOME_STATEMENT,
+        consolidation_basis=ConsolidationBasis.CONSOLIDATED, period=period,
+    )
+    revenue_item = result.statement.get(LineItemKey.REVENUE)
+    assert revenue_item is not None
+    # The CONSOLIDATED figure, confirmed from the real filing's heading-tagged table
+    assert revenue_item.value_rial == 33_104_439
