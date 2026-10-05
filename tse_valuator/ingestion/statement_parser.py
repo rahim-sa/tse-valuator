@@ -10,10 +10,19 @@ tables with IDENTICAL internal structure and no distinguishing text
 inside the table itself -- confirmed against a real خصدرا filing,
 where two income statement tables returned different revenue figures
 and were indistinguishable without looking at the HEADING TEXT
-immediately preceding each table (e.g. "صورت سود و زيان تلفيقي"
-[consolidated] vs "صورت سود و زيان" [standalone, no "تلفیقی" qualifier]).
-This module now captures that preceding heading per section, so
-callers can filter to the correct consolidation basis.
+immediately preceding each table.
+
+KNOWN LIMITATION: some older filings (confirmed: بترانس fiscal year
+1402) bunch all statement-name headings together near the document's
+start (like a table of contents) instead of placing them individually
+before each table -- for these filings, heading_fa will incorrectly
+show generic disclaimer text instead of the real statement name, and
+is_consolidated will be unreliable. A fix was attempted (positional
+pairing of headings-list order with table order) but found to be
+incorrect, since the two orderings don't actually match in at least
+one real case -- reverted rather than ship broken logic. Revisit with
+a content-based matching approach (matching each table's row labels
+against expected statement-type signatures) if this needs solving.
 """
 
 from __future__ import annotations
@@ -25,10 +34,8 @@ from bs4 import BeautifulSoup, NavigableString
 
 @dataclass
 class RawStatementSection:
-    """One statement (income statement, balance sheet, etc.) as raw,
-    unmapped label -> value rows, exactly as Codal labeled them."""
     title_fa: str
-    heading_fa: str  # the nearest preceding heading text, e.g. "صورت سود و زيان تلفيقي"
+    heading_fa: str
     column_headers: list[str]
     rows: dict[str, list[str]] = field(default_factory=dict)
 
@@ -38,11 +45,6 @@ class RawStatementSection:
 
 
 def parse_codal_excel_export(html_bytes: bytes) -> list[RawStatementSection]:
-    """
-    Parses a Codal 'Excel' export (actually HTML) into a list of raw
-    statement sections, each tagged with its nearest preceding heading
-    so callers can distinguish consolidated vs. standalone tables.
-    """
     soup = BeautifulSoup(html_bytes, "lxml")
     sections: list[RawStatementSection] = []
 
@@ -52,13 +54,12 @@ def parse_codal_excel_export(html_bytes: bytes) -> list[RawStatementSection]:
         if element.name != "table":
             if isinstance(element, NavigableString):
                 continue
-            if not element.find_all():  # leaf element -- a real candidate for heading text
+            if not element.find_all():
                 text = element.get_text(strip=True)
                 if text and len(text) < 100:
                     current_heading = text
             continue
 
-        # element.name == "table"
         table = element
         rows = table.find_all("tr")
         if not rows:

@@ -45,3 +45,26 @@ def test_consolidated_and_standalone_sections_distinguished_by_heading():
     # expected behavior; run it manually against a live خصدرا filing
     # (see conversation history) once that fixture is saved locally.
     pass  # placeholder -- see note below
+
+# def test_batrans_1402_filing_uses_fallback_positional_heading_pairing():
+#     """
+#     Regression test for a real layout variant: بترانس's 1402 filing
+#     bunches all statement-name headings together near the document's
+#     start (like a table of contents) instead of placing them
+#     individually before each table. Confirms the fallback heading
+#     assignment correctly identifies at least one consolidated income
+#     statement section.
+#     """
+#     from tse_valuator.ingestion.codal_client import search_filings, download_filing_excel
+
+#     filings = search_filings("بترانس", from_jdate="1401/01/01")
+#     target = next(
+#         f for f in filings
+#         if "۱۴۰۲/۱۲/۲۹" in f.title and "حسابرسی شده" in f.title
+#         and "نشده" not in f.title and "تلفیقی" in f.title
+#     )
+#     html_bytes = download_filing_excel(target.excel_url)
+#     sections = parse_codal_excel_export(html_bytes)
+
+#     consolidated_sections = [s for s in sections if s.is_consolidated]
+#     assert len(consolidated_sections) > 0, "fallback heading pairing found no consolidated sections"
