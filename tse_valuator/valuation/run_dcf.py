@@ -20,7 +20,6 @@ from tse_valuator.ingestion.schema import (
     ConsolidationBasis, FiscalPeriod, LineItemKey, PeriodType, StatementType, NormalizedStatement,
 )
 from tse_valuator.ingestion.statement_builder import build_normalized_statement
-from tse_valuator.valuation.free_cash_flow import extract_fcf_inputs, unlevered_fcf
 from tse_valuator.valuation.wacc import cost_of_equity, wacc
 from tse_valuator.valuation.dcf import enterprise_value
 from tse_valuator.valuation.equity_bridge import equity_value, value_per_share
@@ -29,6 +28,7 @@ from tse_valuator.macro.fx_client import get_usd_irr_rate, get_average_usd_irr_r
 from tse_valuator.macro.cpi_client import fetch_iran_cpi_annual
 from tse_valuator.macro.country_risk_client import fetch_country_risk_premium
 from tse_valuator.macro.tsetmc_client import get_current_market_data
+from tse_valuator.valuation.free_cash_flow import extract_fcf_inputs, unlevered_fcf, FcfInputs
 
 
 @dataclass
@@ -184,20 +184,55 @@ def run_dcf_valuation(
         jy_current, gdate_current, stmt_current = statements[i]
         jy_prior, gdate_prior, stmt_prior = statements[i + 1]
 
+        # fcf_current = extract_fcf_inputs(stmt_current, tax_rate=assumptions.tax_rate)
+        # fcf_prior = extract_fcf_inputs(stmt_prior, tax_rate=assumptions.tax_rate)
+
+        # real_nwc_current = deflate_to_real(
+        #     fcf_current.net_working_capital, from_year=gdate_current.year, to_base_year=base_year, cpi_series=cpi_series
+        # )
+        # real_nwc_prior = deflate_to_real(
+        #     fcf_prior.net_working_capital, from_year=gdate_prior.year, to_base_year=base_year, cpi_series=cpi_series
+        # )
+        # fcf_current.net_working_capital = real_nwc_current
+        # nominal_fcf = unlevered_fcf(fcf_current, prior_nwc=real_nwc_prior)
+
+        # real_fcf = deflate_to_real(nominal_fcf, from_year=gdate_current.year, to_base_year=base_year, cpi_series=cpi_series)
+        # real_fcf_values.append((jy_current, real_fcf))
+
         fcf_current = extract_fcf_inputs(stmt_current, tax_rate=assumptions.tax_rate)
         fcf_prior = extract_fcf_inputs(stmt_prior, tax_rate=assumptions.tax_rate)
 
+        # Deflate EVERY component to base_year terms BEFORE combining them --
+        # mixing nominal P&L figures with deflated working-capital change
+        # (or deflating the combined result a second time) causes a unit
+        # mismatch. Confirmed as a real bug: it inflated the 1403
+        # contribution to ~928M vs 1404's correct ~332M.
+        real_operating_income = deflate_to_real(
+            fcf_current.operating_income, from_year=gdate_current.year, to_base_year=base_year, cpi_series=cpi_series
+        )
+        real_da = deflate_to_real(
+            fcf_current.depreciation_amortization, from_year=gdate_current.year, to_base_year=base_year, cpi_series=cpi_series
+        )
+        real_capex = deflate_to_real(
+            fcf_current.capex, from_year=gdate_current.year, to_base_year=base_year, cpi_series=cpi_series
+        )
         real_nwc_current = deflate_to_real(
             fcf_current.net_working_capital, from_year=gdate_current.year, to_base_year=base_year, cpi_series=cpi_series
         )
         real_nwc_prior = deflate_to_real(
             fcf_prior.net_working_capital, from_year=gdate_prior.year, to_base_year=base_year, cpi_series=cpi_series
         )
-        fcf_current.net_working_capital = real_nwc_current
-        nominal_fcf = unlevered_fcf(fcf_current, prior_nwc=real_nwc_prior)
 
-        real_fcf = deflate_to_real(nominal_fcf, from_year=gdate_current.year, to_base_year=base_year, cpi_series=cpi_series)
+        real_fcf_inputs = FcfInputs(
+            operating_income=real_operating_income,
+            tax_rate=assumptions.tax_rate,
+            depreciation_amortization=real_da,
+            capex=real_capex,
+            net_working_capital=real_nwc_current,
+        )
+        real_fcf = unlevered_fcf(real_fcf_inputs, prior_nwc=real_nwc_prior)
         real_fcf_values.append((jy_current, real_fcf))
+    
 
     base_fcf_rial_millions = sum(v for _, v in real_fcf_values) / len(real_fcf_values)
     fcf_years_used = [jy for jy, _ in real_fcf_values]
